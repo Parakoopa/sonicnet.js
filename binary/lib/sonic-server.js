@@ -47,8 +47,12 @@ SonicServer.prototype.start = function() {
   var constraints = {
     audio: { optional: [{ echoCancellation: false }] }
   };
-  navigator.webkitGetUserMedia(constraints,
-      this.onStream_.bind(this), this.onStreamError_.bind(this));
+  if (navigator.webkitGetUserMedia) {
+    navigator.webkitGetUserMedia(constraints,
+        this.onStream_.bind(this), this.onStreamError_.bind(this));
+  } else if (navigator.mediaDevices.getUserMedia) {
+    navigator.mediaDevices.getUserMedia(constraints).then(this.onStream_.bind(this)).catch(this.onStreamError_.bind(this));
+  }
 };
 
 /**

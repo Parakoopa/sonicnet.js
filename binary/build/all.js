@@ -64,8 +64,9 @@ function SonicCoder(params) {
   this.alphabetString = params.alphabet || ALPHABET;
   this.startChar = params.startChar || '^';
   this.endChar = params.endChar || '$';
+  this.sepChar = params.sepChar || '¥';
   // Make sure that the alphabet has the start and end chars.
-  this.alphabet = this.startChar + this.alphabetString + this.endChar;
+  this.alphabet = this.sepChar + this.startChar + this.alphabetString + this.endChar;
 }
 
 /**
@@ -244,7 +245,6 @@ SonicServer.prototype.getPeakFrequency = function() {
   }
   // Only care about sufficiently tall peaks.
   if (max > this.peakThreshold) {
-    console.log("max:" + max);
     return this.indexToFreq(index);
   }
   return null;
@@ -445,12 +445,21 @@ function SonicSocket(params) {
 SonicSocket.prototype.send = function(input, opt_callback) {
   // Surround the word with start and end characters.
   input = this.coder.startChar + input + this.coder.endChar;
+  var sepChar = this.coder.sepChar;
+  var tmpArray = [];
+  input.split("").forEach(function(s) {
+    tmpArray.push(s);
+    tmpArray.push(sepChar);
+  });
+  input = tmpArray.join("");
+
   // Use WAAPI to schedule the frequencies.
   for (var i = 0; i < input.length; i++) {
     var char = input[i];
     var freq = this.coder.charToFreq(char);
     console.log("Sending char:" + char + ", freq:" + freq);
-    var time = audioContext.currentTime + this.charDuration * i;
+    var duration = char == sepChar ? this.charDuration / 2 : this.charDuration;
+    var time = audioContext.currentTime + duration * i;
     this.scheduleToneAt(freq, time, this.charDuration);
   }
 
@@ -488,18 +497,18 @@ var SonicSocket = require('./lib/sonic-socket.js');
 var SonicServer = require('./lib/sonic-server.js');
 var SonicCoder = require('./lib/sonic-coder.js');
 
-var ALPHABET = ' abcdefghijklmnopqrstuvwxyz';
+var ALPHABET = ' abcdefg';
 var params = {
   alphabet: ALPHABET,
   debug: true,
   timeout: 1000,
   freqMin: 19000,
-  freqMax: 20500,
+  freqMax: 20000,
   peakThreshold: -115,
-  charDuration: 0.05,
+  charDuration: 0.1,
   rampDuration: 0.001,
   bufferLength: 32,
-  fps: 120,
+  fps: 100,
   minRunLength: 1,
 };
 // Create an ultranet server.

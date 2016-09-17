@@ -22,12 +22,21 @@ function SonicSocket(params) {
 SonicSocket.prototype.send = function(input, opt_callback) {
   // Surround the word with start and end characters.
   input = this.coder.startChar + input + this.coder.endChar;
+  var sepChar = this.coder.sepChar;
+  var tmpArray = [];
+  input.split("").forEach(function(s) {
+    tmpArray.push(s);
+    tmpArray.push(sepChar);
+  });
+  input = tmpArray.join("");
+
   // Use WAAPI to schedule the frequencies.
   for (var i = 0; i < input.length; i++) {
     var char = input[i];
     var freq = this.coder.charToFreq(char);
     console.log("Sending char:" + char + ", freq:" + freq);
-    var time = audioContext.currentTime + this.charDuration * i;
+    var duration = char == sepChar ? this.charDuration / 2 : this.charDuration;
+    var time = audioContext.currentTime + duration * i;
     this.scheduleToneAt(freq, time, this.charDuration);
   }
 

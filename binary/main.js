@@ -2,18 +2,18 @@ var SonicSocket = require('./lib/sonic-socket.js');
 var SonicServer = require('./lib/sonic-server.js');
 var SonicCoder = require('./lib/sonic-coder.js');
 
-var ALPHABET = ' abcdefghijklmnopqrstuvwxyz';
+var ALPHABET = ' abcdefg';
 var params = {
   alphabet: ALPHABET,
   debug: true,
   timeout: 1000,
   freqMin: 19000,
-  freqMax: 20500,
+  freqMax: 20000,
   peakThreshold: -115,
-  charDuration: 0.05,
+  charDuration: 0.1,
   rampDuration: 0.001,
   bufferLength: 32,
-  fps: 120,
+  fps: 100,
   minRunLength: 1,
 };
 // Create an ultranet server.

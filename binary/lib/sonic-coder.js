@@ -14,7 +14,7 @@ function SonicCoder(params) {
   this.endChar = params.endChar || '$';
   this.sepChar = params.sepChar || '¥';
   // Make sure that the alphabet has the start and end chars.
-  this.alphabet = this.sepChar + this.startChar + this.alphabetString + this.endChar;
+  this.alphabet = this.startChar + this.alphabetString + this.endChar + this.sepChar;
 }
 
 /**

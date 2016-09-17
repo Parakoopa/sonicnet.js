@@ -66,7 +66,7 @@ function SonicCoder(params) {
   this.endChar = params.endChar || '$';
   this.sepChar = params.sepChar || '¥';
   // Make sure that the alphabet has the start and end chars.
-  this.alphabet = this.sepChar + this.startChar + this.alphabetString + this.endChar;
+  this.alphabet = this.startChar + this.alphabetString + this.endChar + this.sepChar;
 }
 
 /**
@@ -341,7 +341,7 @@ SonicServer.prototype.getLastRun = function() {
   for (var i = this.peakHistory.length() - 2; i >= 0; i--) {
     var char = this.peakHistory.get(i);
     if (char == this.coder.sepChar) {
-      break;
+      return lastChar;
     }
     if (char == lastChar) {
       runLength += 1;
@@ -463,7 +463,7 @@ SonicSocket.prototype.send = function(input, opt_callback) {
     var char = input[i];
     var freq = this.coder.charToFreq(char);
     console.log("Sending char:" + char + ", freq:" + freq);
-    var duration = char == sepChar ? this.charDuration / 8 : this.charDuration;
+    var duration = char == sepChar ? this.charDuration / 2 : this.charDuration;
     var time = audioContext.currentTime + duration * i;
     this.scheduleToneAt(freq, time, this.charDuration);
   }

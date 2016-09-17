@@ -225,7 +225,7 @@ SonicServer.prototype.getLastRun = function() {
   for (var i = this.peakHistory.length() - 2; i >= 0; i--) {
     var char = this.peakHistory.get(i);
     if (char == this.coder.sepChar) {
-      break;
+      return lastChar;
     }
     if (char == lastChar) {
       runLength += 1;

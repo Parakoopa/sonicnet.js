@@ -319,7 +319,9 @@ SonicServer.prototype.analysePeaks = function() {
     // If receiving, look for character changes.
     if (char != this.lastChar &&
         char != this.coder.startChar && char != this.coder.endChar) {
-      this.buffer += char;
+      if (char != this.coder.sepChar) {
+        this.buffer += char;
+      }
       this.lastChar = char;
       this.fire_(this.callbacks.character, char);
     }
@@ -338,13 +340,16 @@ SonicServer.prototype.getLastRun = function() {
   // Look at the peakHistory array for patterns like ajdlfhlkjxxxxxx$.
   for (var i = this.peakHistory.length() - 2; i >= 0; i--) {
     var char = this.peakHistory.get(i);
+    if (char == this.coder.sepChar) {
+      break;
+    }
     if (char == lastChar) {
       runLength += 1;
     } else {
       break;
     }
   }
-  if (runLength > this.minRunLength) {
+  if (runLength >= this.minRunLength) {
     // Remove it from the buffer.
     this.peakHistory.remove(i + 1, runLength + 1);
     return lastChar;
@@ -458,7 +463,7 @@ SonicSocket.prototype.send = function(input, opt_callback) {
     var char = input[i];
     var freq = this.coder.charToFreq(char);
     console.log("Sending char:" + char + ", freq:" + freq);
-    var duration = char == sepChar ? this.charDuration / 2 : this.charDuration;
+    var duration = char == sepChar ? this.charDuration / 8 : this.charDuration;
     var time = audioContext.currentTime + duration * i;
     this.scheduleToneAt(freq, time, this.charDuration);
   }

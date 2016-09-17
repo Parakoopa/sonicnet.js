@@ -35,7 +35,7 @@ SonicSocket.prototype.send = function(input, opt_callback) {
     var char = input[i];
     var freq = this.coder.charToFreq(char);
     console.log("Sending char:" + char + ", freq:" + freq);
-    var duration = char == sepChar ? this.charDuration / 2 : this.charDuration;
+    var duration = char == sepChar ? this.charDuration / 8 : this.charDuration;
     var time = audioContext.currentTime + duration * i;
     this.scheduleToneAt(freq, time, this.charDuration);
   }

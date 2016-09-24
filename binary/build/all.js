@@ -541,6 +541,12 @@ var params = {
   minRunLength: 1,
   fftSize: 2048,
 };
+
+var freqRange = params.freqMax - params.freqMin;
+var aboutFftSize = 44100 / (freqRange / ALPHABET.length);
+var recommendFftSize = Math.pow(2, Math.ceil(Math.log2(aboutFftSize)));
+params.fftSize = recommendFftSize;
+
 // Create an ultranet server.
 var sonicServer = new SonicServer(params);
 // Create an ultranet socket.

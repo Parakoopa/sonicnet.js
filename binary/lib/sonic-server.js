@@ -2,6 +2,7 @@ var RingBuffer = require('./ring-buffer.js');
 var SonicCoder = require('./sonic-coder.js');
 
 var audioContext = new window.AudioContext || new webkitAudioContext();
+
 /**
  * Extracts meaning from audio streams.
  *
@@ -14,6 +15,7 @@ var audioContext = new window.AudioContext || new webkitAudioContext();
  * 5. Call back when a peak comes up often enough.
  */
 function SonicServer(params) {
+  var self = this;
   params = params || {};
   this.fps = params.fps || 60;
   this.peakThreshold = params.peakThreshold || -65;
@@ -32,6 +34,17 @@ function SonicServer(params) {
   this.state = State.IDLE;
   this.isRunning = false;
   this.iteration = 0;
+  this.startTime = null;
+  this.fftSize = params.fftSize || 2048;
+  this.debugFftBuffer = new RingBuffer(params.debugFftBufferSize || 256);
+  if (this.debug) {
+    window.setInterval(function(){
+      console.debug("Avg fft time:",
+        self.debugFftBuffer.array.reduce(function(v, i){return v + i}) / self.debugFftBuffer.length(),
+        "ms",
+        `(fftSize: ${self.fftSize})`);
+    }, 5000);
+  }
 }
 
 var State = {
@@ -96,6 +109,7 @@ SonicServer.prototype.onStream_ = function(stream) {
   // Setup audio graph.
   var input = audioContext.createMediaStreamSource(stream);
   var analyser = audioContext.createAnalyser();
+  analyser.fftSize = this.fftSize;
   input.connect(analyser);
   // Create the frequency array.
   this.freqs = new Float32Array(analyser.frequencyBinCount);
@@ -129,24 +143,26 @@ SonicServer.prototype.getPeakFrequency = function() {
   }
   // Only care about sufficiently tall peaks.
   if (max > this.peakThreshold) {
-    return this.indexToFreq(index);
+    return [this.indexToFreq(index), max];
   }
   return null;
 };
 
 SonicServer.prototype.loop = function() {
+  var st = window.performance.now();
   this.analyser.getFloatFrequencyData(this.freqs);
+  this.debugFftBuffer.add(window.performance.now() - st);
   // Sanity check the peaks every 5 seconds.
   if ((this.iteration + 1) % (60 * 5) == 0) {
     this.restartServerIfSanityCheckFails();
   }
   // Calculate peaks, and add them to history.
-  var freq = this.getPeakFrequency();
-  if (freq) {
-    var char = this.coder.freqToChar(freq);
+  var freqInfo = this.getPeakFrequency();
+  if (freqInfo) {
+    var char = this.coder.freqToChar(freqInfo[0]);
     // DEBUG ONLY: Output the transcribed char.
     if (this.debug) {
-      console.log('Transcribed char: ' + char + ', freq:' + freq);
+      console.log('Transcribed char: ' + char + ', freq:' + freqInfo[0] + ', max: ' + freqInfo[1]);
     }
     this.peakHistory.add(char);
     this.peakTimes.add(new Date());
@@ -157,8 +173,9 @@ SonicServer.prototype.loop = function() {
       // Last detection was over 300ms ago.
       this.state = State.IDLE;
       if (this.debug) {
-        console.log('Token', this.buffer, 'timed out');
+        console.log('Token', this.buffer, 'timed out. duration:', (window.performance.now() - this.startTime), "ms");
       }
+      this.startTime = null;
       this.peakTimes.clear();
     }
   }
@@ -198,6 +215,7 @@ SonicServer.prototype.analysePeaks = function() {
     if (char == this.coder.startChar) {
       this.buffer = '';
       this.state = State.RECV;
+      this.startTime = window.performance.now();
     }
   } else if (this.state == State.RECV) {
     // If receiving, look for character changes.
@@ -212,8 +230,10 @@ SonicServer.prototype.analysePeaks = function() {
     // Also look for the end character to go into idle mode.
     if (char == this.coder.endChar) {
       this.state = State.IDLE;
+      console.log("Duration: ", (window.performance.now() - this.startTime), "ms");
       this.fire_(this.callbacks.message, this.buffer);
       this.buffer = '';
+      this.startTime = null;
     }
   }
 };

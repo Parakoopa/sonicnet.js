@@ -14,7 +14,9 @@ var params = {
   rampDuration: 0.001,
   bufferLength: 32,
   fps: 100,
+  amp: 1,
   minRunLength: 1,
+  fftSize: 2048,
 };
 // Create an ultranet server.
 var sonicServer = new SonicServer(params);

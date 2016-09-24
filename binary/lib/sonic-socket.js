@@ -16,6 +16,7 @@ function SonicSocket(params) {
   this.charDuration = params.charDuration || 0.2;
   this.coder = params.coder || new SonicCoder(params);
   this.rampDuration = params.rampDuration || 0.001;
+  this.amp = params.amp || 1;
 }
 
 
@@ -34,10 +35,11 @@ SonicSocket.prototype.send = function(input, opt_callback) {
   for (var i = 0; i < input.length; i++) {
     var char = input[i];
     var freq = this.coder.charToFreq(char);
-    console.log("Sending char:" + char + ", freq:" + freq);
+    console.log("Sending char:" + char + ", freq:" + freq + ", amp: " + this.amp);
     var duration = char == sepChar ? this.charDuration / 2 : this.charDuration;
     var time = audioContext.currentTime + duration * i;
-    this.scheduleToneAt(freq, time, this.charDuration);
+    this.scheduleToneAt(freq, time, this.charDuration, this.amp);
+    this.scheduleToneAt(freq, time + (1/freq/4), this.charDuration, this.amp);
   }
 
   // If specified, callback after roughly the amount of time it would have
@@ -48,20 +50,21 @@ SonicSocket.prototype.send = function(input, opt_callback) {
   }
 };
 
-SonicSocket.prototype.scheduleToneAt = function(freq, startTime, duration) {
+SonicSocket.prototype.scheduleToneAt = function(freq, startTime, duration, amp) {
   var gainNode = audioContext.createGain();
   // Gain => Merger
   gainNode.gain.value = 0;
 
   gainNode.gain.setValueAtTime(0, startTime);
-  gainNode.gain.linearRampToValueAtTime(1, startTime + this.rampDuration);
-  gainNode.gain.setValueAtTime(1, startTime + duration - this.rampDuration);
+  gainNode.gain.linearRampToValueAtTime(amp, startTime + this.rampDuration);
+  gainNode.gain.setValueAtTime(amp, startTime + duration - this.rampDuration);
   gainNode.gain.linearRampToValueAtTime(0, startTime + duration);
 
   gainNode.connect(audioContext.destination);
 
   var osc = audioContext.createOscillator();
   osc.frequency.value = freq;
+  // osc.type = "square";
   osc.connect(gainNode);
 
   osc.start(startTime);

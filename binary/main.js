@@ -5,7 +5,7 @@ var SonicCoder = require('./lib/sonic-coder.js');
 var BITS = '01234567'; // 89abcdef
 var params = {
   bits: BITS,
-  debug: false,
+  debug: true,
   timeout: 1000,
   freqMin: 19000,
   freqMax: 20000,

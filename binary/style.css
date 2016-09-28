@@ -7,7 +7,7 @@ body, html {
 #container {
   position: relative;
   margin: 3em auto;
-  width: 400px;
+  width: 700px;
   background: #eee;
   border: 1px solid #ddd;
 }
@@ -29,7 +29,7 @@ footer {
 
 #history-wrap {
   min-height: 100px;
-  max-height: 250px;
+  max-height: 350px;
   overflow: scroll;
   margin-bottom: 1em;
 }

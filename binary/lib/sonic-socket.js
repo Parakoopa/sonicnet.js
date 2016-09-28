@@ -12,6 +12,7 @@ var audioContext = new window.AudioContext || new webkitAudioContext();
  */
 function SonicSocket(params) {
   params = params || {};
+  this.mode = params.mode || 0;
   this.coder = params.coder || new SonicCoder();
   this.charDuration = params.charDuration || 0.2;
   this.coder = params.coder || new SonicCoder(params);
@@ -19,6 +20,9 @@ function SonicSocket(params) {
   this.amp = params.amp || 1;
 }
 
+SonicSocket.prototype.isModeFreqBin = function() {
+  return this.mode == 1;
+}
 
 SonicSocket.prototype.send = function(input, opt_callback) {
   // Surround the word with start and end characters.
@@ -35,11 +39,20 @@ SonicSocket.prototype.send = function(input, opt_callback) {
   for (var i = 0; i < input.length; i++) {
     var char = input[i];
     var freq = this.coder.charToFreq(char);
-    console.log("Sending char:" + char + ", freq:" + freq + ", amp: " + this.amp);
-    var duration = char == sepChar ? this.charDuration / 2 : this.charDuration;
+
+    var bin = 0;
+    if (this.isModeFreqBin()) {
+      bin = this.coder.charToBin(char);
+    } else {
+
+    }
+
+    console.log("Sending char:" + char + ", freq:" + freq + ", bin: " + bin + ", amp: " + this.amp);
+    var duration = (char == sepChar) ? (this.charDuration / 2) : (bin == 0 ? this.charDuration : this.charDuration * 2);
     var time = audioContext.currentTime + duration * i;
     this.scheduleToneAt(freq, time, this.charDuration, this.amp);
-    this.scheduleToneAt(freq, time + (1/freq/4), this.charDuration, this.amp);
+    // 90°位相をずらした波を重ねる
+    // this.scheduleToneAt(freq, time + (1/freq/4), this.charDuration, this.amp);
   }
 
   // If specified, callback after roughly the amount of time it would have

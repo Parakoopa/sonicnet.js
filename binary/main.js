@@ -2,27 +2,32 @@ var SonicSocket = require('./lib/sonic-socket.js');
 var SonicServer = require('./lib/sonic-server.js');
 var SonicCoder = require('./lib/sonic-coder.js');
 
-var ALPHABET = ' abcdefg';
+var BITS = '01234567'; // 89abcdef
 var params = {
-  alphabet: ALPHABET,
-  debug: true,
+  bits: BITS,
+  debug: false,
   timeout: 1000,
   freqMin: 19000,
   freqMax: 20000,
+  freqError: 100,
   peakThreshold: -115,
-  charDuration: 0.1,
-  rampDuration: 0.001,
-  bufferLength: 32,
+  charDuration: 0.05,
+  rampDuration: 0.0005,
+  bufferLength: 64,
   fps: 100,
   amp: 1,
-  minRunLength: 1,
-  fftSize: 2048,
+  minRunLength: 2,
+  fftSize: 2048, // default
+  mode: 1, // 0: freq, 1: freq+bin
 };
 
 var freqRange = params.freqMax - params.freqMin;
-var aboutFftSize = 44100 / (freqRange / ALPHABET.length);
-var recommendFftSize = Math.pow(2, Math.ceil(Math.log2(aboutFftSize)));
+var rangeHz = freqRange / Math.ceil((BITS.length + 3) / (params.mode + 1));
+var aboutFftSize = 44100 / rangeHz;
+var recommendFftSize = Math.pow(2, Math.ceil(Math.log2(aboutFftSize))); // 純粋なものだと厳しいので2倍する
 params.fftSize = recommendFftSize;
+
+console.log("Start { freqRange: ", freqRange, ", rangeHz: ", rangeHz, ", aboutFftSize: ", aboutFftSize, ", recommendFftSize: ", recommendFftSize);
 
 // Create an ultranet server.
 var sonicServer = new SonicServer(params);

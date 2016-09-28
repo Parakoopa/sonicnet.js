@@ -17,10 +17,13 @@ var audioContext = new window.AudioContext || new webkitAudioContext();
 function SonicServer(params) {
   var self = this;
   params = params || {};
+  this.bits = params.bits;
+  this.mode = params.mode || 0;
   this.fps = params.fps || 60;
   this.peakThreshold = params.peakThreshold || -65;
   this.minRunLength = params.minRunLength || 2;
   this.coder = params.coder || new SonicCoder(params);
+  this.charDuration = params.charDuration || 0.2;
   // How long (in ms) to wait for the next character.
   this.timeout = params.timeout || 300;
   this.debug = !!params.debug;
@@ -51,6 +54,10 @@ var State = {
   IDLE: 1,
   RECV: 2
 };
+
+SonicServer.prototype.isModeFreqBin = function() {
+  return this.mode == 1;
+}
 
 /**
  * Start processing the audio stream.
@@ -177,6 +184,7 @@ SonicServer.prototype.loop = function() {
       }
       this.startTime = null;
       this.peakTimes.clear();
+      this.peakHistory.clear();
     }
   }
   // Analyse the peak history.
@@ -212,41 +220,59 @@ SonicServer.prototype.analysePeaks = function() {
   }
   if (this.state == State.IDLE) {
     // If idle, look for start character to go into recv mode.
-    if (char == this.coder.startChar) {
+    if (char[0] == this.coder.startChar) {
       this.buffer = '';
       this.state = State.RECV;
       this.startTime = window.performance.now();
     }
   } else if (this.state == State.RECV) {
-    // If receiving, look for character changes.
-    if (char != this.lastChar &&
-        char != this.coder.startChar && char != this.coder.endChar) {
-      if (char != this.coder.sepChar) {
-        this.buffer += char;
+    // 文字変更があった場合は書き換える
+    if (char[1]) {
+      var replacer = (char[0] == this.coder.endChar) ? "" : char[0];
+      var ary = this.buffer.split("");
+      ary[ary.length - 1] = replacer;
+      this.buffer = ary.join("");
+      this.fire_(this.callbacks.character, replacer);
+    } else {
+      // If receiving, look for character changes.
+      if (char[0] != this.lastChar &&
+          char[0] != this.coder.startChar && char[0] != this.coder.endChar) {
+        if (char[0] != this.coder.sepChar) {
+          this.buffer += char[0];
+        }
+        this.lastChar = char[0];
+        this.fire_(this.callbacks.character, char[0]);
       }
-      this.lastChar = char;
-      this.fire_(this.callbacks.character, char);
     }
     // Also look for the end character to go into idle mode.
-    if (char == this.coder.endChar) {
+    if (char[0] == this.coder.endChar) {
       this.state = State.IDLE;
-      console.log("Duration: ", (window.performance.now() - this.startTime), "ms");
-      this.fire_(this.callbacks.message, this.buffer);
+      var duration = Math.round(window.performance.now() - this.startTime);
+      // 8文字なら一文字には3bitの情報が入っているという前提
+      // 文字数の2の対数bit
+      var bps = Math.round((this.buffer.length * Math.log2(this.bits.length)) / (duration / 1000));
+      console.log("Duration: ", duration, "ms ", bps, "bps");
+      this.fire_(this.callbacks.message, `${this.buffer}, duration(${duration}ms), ${bps}bps`);
       this.buffer = '';
       this.startTime = null;
+      this.peakTimes.clear();
+      this.peakHistory.clear();
     }
   }
 };
 
 SonicServer.prototype.getLastRun = function() {
   var lastChar = this.peakHistory.last();
-  var runLength = 0;
+  var runLength = 1;
+
+  if (lastChar == this.coder.sepChar) {
+    this.peakHistory.remove(this.peakHistory.length - 1, 1);
+    return [lastChar, false];
+  }
+
   // Look at the peakHistory array for patterns like ajdlfhlkjxxxxxx$.
   for (var i = this.peakHistory.length() - 2; i >= 0; i--) {
     var char = this.peakHistory.get(i);
-    if (char == this.coder.sepChar) {
-      return lastChar;
-    }
     if (char == lastChar) {
       runLength += 1;
     } else {
@@ -254,9 +280,23 @@ SonicServer.prototype.getLastRun = function() {
     }
   }
   if (runLength >= this.minRunLength) {
-    // Remove it from the buffer.
-    this.peakHistory.remove(i + 1, runLength + 1);
-    return lastChar;
+
+    // second per frame
+    var spf = 1000 / this.fps;
+    var durationMs = runLength * spf;
+    // console.log("Duration: ", durationMs, " ms");
+    var changed = false;
+    if (this.isModeFreqBin() && durationMs >= this.charDuration * 1000 * 2) {
+      changed = true;
+      var freq = this.coder.charToFreq(lastChar);
+      changedChar = this.coder.freqToChar(freq, 1);
+      console.log('Changed transcribed char: ', changedChar, " from ", lastChar);
+      // Remove it from the buffer.
+      this.peakHistory.remove(i + 1, runLength + 1);
+      lastChar = changedChar;
+    }
+
+    return [lastChar, changed];
   }
   return null;
 };

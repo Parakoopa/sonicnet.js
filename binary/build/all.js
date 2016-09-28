@@ -54,19 +54,30 @@ module.exports = RingBuffer;
  * A simple sonic encoder/decoder for [a-z0-9] => frequency (and back).
  * A way of representing characters with frequency.
  */
-var ALPHABET = '\n abcdefghijklmnopqrstuvwxyz0123456789,.!?@*';
+var BITS = '01234567';
 
 function SonicCoder(params) {
   params = params || {};
+  this.mode = params.mode || 0;
   this.freqMin = params.freqMin || 18500;
   this.freqMax = params.freqMax || 19500;
   this.freqError = params.freqError || 50;
-  this.alphabetString = params.alphabet || ALPHABET;
+  this.bitString = params.bits || BITS;
   this.startChar = params.startChar || '^';
   this.endChar = params.endChar || '$';
   this.sepChar = params.sepChar || '¥';
-  // Make sure that the alphabet has the start and end chars.
-  this.alphabet = this.startChar + this.alphabetString + this.endChar + this.sepChar;
+  // Make sure that the bits has the start and end chars.
+  this.bits = this.startChar + this.bitString + this.endChar + (this.mode == 0 ? this.sepChar : "");
+  // 指定帯域を区切る数(+1はsepChar用)
+  if (this.mode == 0) {
+    this.bitsLength = this.bits.length;
+  } else {
+    this.bitsLength = Math.ceil(this.bits.length / 2) + 1;
+  }
+}
+
+SonicCoder.prototype.isModeFreqBin = function() {
+  return this.mode == 1;
 }
 
 /**
@@ -74,41 +85,81 @@ function SonicCoder(params) {
  */
 SonicCoder.prototype.charToFreq = function(char) {
   // Get the index of the character.
-  var index = this.alphabet.indexOf(char);
-  if (index == -1) {
-    // If this character isn't in the alphabet, error out.
-    console.error(char, 'is an invalid character.');
-    index = this.alphabet.length - 1;
+  var index;
+  if (this.isModeFreqBin() && char == this.sepChar) {
+    index = this.bitsLength - 1;
+  } else {
+    index = this.bits.indexOf(char);
+    if (index == -1) {
+      // If this character isn't in the bits, error out.
+      console.error(char, 'is an invalid character.');
+      index = this.bits.length - 1;
+    }
+    if (this.isModeFreqBin()) {
+      // バイナリ化した際のindex
+      index = index % (this.bitsLength - 1);
+    }
   }
+
   // Convert from index to frequency.
   var freqRange = this.freqMax - this.freqMin;
-  var percent = index / this.alphabet.length;
+  var percent = index / this.bitsLength;
   var freqOffset = Math.round(freqRange * percent);
   return this.freqMin + freqOffset;
 };
 
 /**
+ * バイナリ化した際の0,1どちらなのか
+ */
+SonicCoder.prototype.charToBin = function(char) {
+  // Get the index of the character.
+    var index;
+  if (this.isModeFreqBin() && char == this.sepChar) {
+    index = this.bitsLength - 1;
+  } else {
+    index = this.bits.indexOf(char);
+    if (index == -1) {
+      // If this character isn't in the bits, error out.
+      console.error(char, 'is an invalid character.');
+      index = this.bits.length - 1;
+    }
+  }
+  // バイナリ化した際の0,1どちらなのか
+  return Math.floor(index / (this.bitsLength - 1));
+};
+
+/**
  * Given a frequency, convert to the corresponding character.
  */
-SonicCoder.prototype.freqToChar = function(freq) {
+SonicCoder.prototype.freqToChar = function(freq, bin) {
   // If the frequency is out of the range.
   if (!(this.freqMin < freq && freq < this.freqMax)) {
     // If it's close enough to the min, clamp it (and same for max).
     if (this.freqMin - freq < this.freqError) {
       freq = this.freqMin;
-    } else if (freq - this.freqMax < this.freqError) {
+    } else if ((freq - this.freqMax) < this.freqError && (freq - this.freqMax) > 0) {
       freq = this.freqMax;
     } else {
       // Otherwise, report error.
       console.error(freq, 'is out of range.');
       return null;
     }
+    console.warn("correction freq:", freq);
   }
   // Convert frequency to index to char.
   var freqRange = this.freqMax - this.freqMin;
   var percent = (freq - this.freqMin) / freqRange;
-  var index = Math.round(this.alphabet.length * percent);
-  return this.alphabet[index];
+  var index = Math.round(this.bitsLength * percent);
+  if (this.isModeFreqBin()) {
+    if (index == (this.bitsLength - 1)) {
+      return this.sepChar;
+    } else if (bin == 1 && index < (this.bits.length - 1)) {
+      index += this.bitsLength - 1;
+    }
+    return this.bits[index];
+  } else {
+    return this.bits[index];
+  }
 };
 
 module.exports = SonicCoder;
@@ -133,10 +184,13 @@ var audioContext = new window.AudioContext || new webkitAudioContext();
 function SonicServer(params) {
   var self = this;
   params = params || {};
+  this.bits = params.bits;
+  this.mode = params.mode || 0;
   this.fps = params.fps || 60;
   this.peakThreshold = params.peakThreshold || -65;
   this.minRunLength = params.minRunLength || 2;
   this.coder = params.coder || new SonicCoder(params);
+  this.charDuration = params.charDuration || 0.2;
   // How long (in ms) to wait for the next character.
   this.timeout = params.timeout || 300;
   this.debug = !!params.debug;
@@ -167,6 +221,10 @@ var State = {
   IDLE: 1,
   RECV: 2
 };
+
+SonicServer.prototype.isModeFreqBin = function() {
+  return this.mode == 1;
+}
 
 /**
  * Start processing the audio stream.
@@ -293,6 +351,7 @@ SonicServer.prototype.loop = function() {
       }
       this.startTime = null;
       this.peakTimes.clear();
+      this.peakHistory.clear();
     }
   }
   // Analyse the peak history.
@@ -328,41 +387,59 @@ SonicServer.prototype.analysePeaks = function() {
   }
   if (this.state == State.IDLE) {
     // If idle, look for start character to go into recv mode.
-    if (char == this.coder.startChar) {
+    if (char[0] == this.coder.startChar) {
       this.buffer = '';
       this.state = State.RECV;
       this.startTime = window.performance.now();
     }
   } else if (this.state == State.RECV) {
-    // If receiving, look for character changes.
-    if (char != this.lastChar &&
-        char != this.coder.startChar && char != this.coder.endChar) {
-      if (char != this.coder.sepChar) {
-        this.buffer += char;
+    // 文字変更があった場合は書き換える
+    if (char[1]) {
+      var replacer = (char[0] == this.coder.endChar) ? "" : char[0];
+      var ary = this.buffer.split("");
+      ary[ary.length - 1] = replacer;
+      this.buffer = ary.join("");
+      this.fire_(this.callbacks.character, replacer);
+    } else {
+      // If receiving, look for character changes.
+      if (char[0] != this.lastChar &&
+          char[0] != this.coder.startChar && char[0] != this.coder.endChar) {
+        if (char[0] != this.coder.sepChar) {
+          this.buffer += char[0];
+        }
+        this.lastChar = char[0];
+        this.fire_(this.callbacks.character, char[0]);
       }
-      this.lastChar = char;
-      this.fire_(this.callbacks.character, char);
     }
     // Also look for the end character to go into idle mode.
-    if (char == this.coder.endChar) {
+    if (char[0] == this.coder.endChar) {
       this.state = State.IDLE;
-      console.log("Duration: ", (window.performance.now() - this.startTime), "ms");
-      this.fire_(this.callbacks.message, this.buffer);
+      var duration = Math.round(window.performance.now() - this.startTime);
+      // 8文字なら一文字には3bitの情報が入っているという前提
+      // 文字数の2の対数bit
+      var bps = Math.round((this.buffer.length * Math.log2(this.bits.length)) / (duration / 1000));
+      console.log("Duration: ", duration, "ms ", bps, "bps");
+      this.fire_(this.callbacks.message, `${this.buffer}, duration(${duration}ms), ${bps}bps`);
       this.buffer = '';
       this.startTime = null;
+      this.peakTimes.clear();
+      this.peakHistory.clear();
     }
   }
 };
 
 SonicServer.prototype.getLastRun = function() {
   var lastChar = this.peakHistory.last();
-  var runLength = 0;
+  var runLength = 1;
+
+  if (lastChar == this.coder.sepChar) {
+    this.peakHistory.remove(this.peakHistory.length - 1, 1);
+    return [lastChar, false];
+  }
+
   // Look at the peakHistory array for patterns like ajdlfhlkjxxxxxx$.
   for (var i = this.peakHistory.length() - 2; i >= 0; i--) {
     var char = this.peakHistory.get(i);
-    if (char == this.coder.sepChar) {
-      return lastChar;
-    }
     if (char == lastChar) {
       runLength += 1;
     } else {
@@ -370,9 +447,23 @@ SonicServer.prototype.getLastRun = function() {
     }
   }
   if (runLength >= this.minRunLength) {
-    // Remove it from the buffer.
-    this.peakHistory.remove(i + 1, runLength + 1);
-    return lastChar;
+
+    // second per frame
+    var spf = 1000 / this.fps;
+    var durationMs = runLength * spf;
+    // console.log("Duration: ", durationMs, " ms");
+    var changed = false;
+    if (this.isModeFreqBin() && durationMs >= this.charDuration * 1000 * 2) {
+      changed = true;
+      var freq = this.coder.charToFreq(lastChar);
+      changedChar = this.coder.freqToChar(freq, 1);
+      console.log('Changed transcribed char: ', changedChar, " from ", lastChar);
+      // Remove it from the buffer.
+      this.peakHistory.remove(i + 1, runLength + 1);
+      lastChar = changedChar;
+    }
+
+    return [lastChar, changed];
   }
   return null;
 };
@@ -460,6 +551,7 @@ var audioContext = new window.AudioContext || new webkitAudioContext();
  */
 function SonicSocket(params) {
   params = params || {};
+  this.mode = params.mode || 0;
   this.coder = params.coder || new SonicCoder();
   this.charDuration = params.charDuration || 0.2;
   this.coder = params.coder || new SonicCoder(params);
@@ -467,6 +559,9 @@ function SonicSocket(params) {
   this.amp = params.amp || 1;
 }
 
+SonicSocket.prototype.isModeFreqBin = function() {
+  return this.mode == 1;
+}
 
 SonicSocket.prototype.send = function(input, opt_callback) {
   // Surround the word with start and end characters.
@@ -483,11 +578,20 @@ SonicSocket.prototype.send = function(input, opt_callback) {
   for (var i = 0; i < input.length; i++) {
     var char = input[i];
     var freq = this.coder.charToFreq(char);
-    console.log("Sending char:" + char + ", freq:" + freq + ", amp: " + this.amp);
-    var duration = char == sepChar ? this.charDuration / 2 : this.charDuration;
+
+    var bin = 0;
+    if (this.isModeFreqBin()) {
+      bin = this.coder.charToBin(char);
+    } else {
+
+    }
+
+    console.log("Sending char:" + char + ", freq:" + freq + ", bin: " + bin + ", amp: " + this.amp);
+    var duration = (char == sepChar) ? (this.charDuration / 2) : (bin == 0 ? this.charDuration : this.charDuration * 2);
     var time = audioContext.currentTime + duration * i;
     this.scheduleToneAt(freq, time, this.charDuration, this.amp);
-    this.scheduleToneAt(freq, time + (1/freq/4), this.charDuration, this.amp);
+    // 90°位相をずらした波を重ねる
+    // this.scheduleToneAt(freq, time + (1/freq/4), this.charDuration, this.amp);
   }
 
   // If specified, callback after roughly the amount of time it would have
@@ -525,27 +629,32 @@ var SonicSocket = require('./lib/sonic-socket.js');
 var SonicServer = require('./lib/sonic-server.js');
 var SonicCoder = require('./lib/sonic-coder.js');
 
-var ALPHABET = ' abcdefg';
+var BITS = '01234567'; // 89abcdef
 var params = {
-  alphabet: ALPHABET,
-  debug: true,
+  bits: BITS,
+  debug: false,
   timeout: 1000,
   freqMin: 19000,
   freqMax: 20000,
+  freqError: 100,
   peakThreshold: -115,
-  charDuration: 0.1,
-  rampDuration: 0.001,
-  bufferLength: 32,
+  charDuration: 0.05,
+  rampDuration: 0.0005,
+  bufferLength: 64,
   fps: 100,
   amp: 1,
-  minRunLength: 1,
-  fftSize: 2048,
+  minRunLength: 2,
+  fftSize: 2048, // default
+  mode: 1, // 0: freq, 1: freq+bin
 };
 
 var freqRange = params.freqMax - params.freqMin;
-var aboutFftSize = 44100 / (freqRange / ALPHABET.length);
-var recommendFftSize = Math.pow(2, Math.ceil(Math.log2(aboutFftSize)));
+var rangeHz = freqRange / Math.ceil((BITS.length + 3) / (params.mode + 1));
+var aboutFftSize = 44100 / rangeHz;
+var recommendFftSize = Math.pow(2, Math.ceil(Math.log2(aboutFftSize))); // 純粋なものだと厳しいので2倍する
 params.fftSize = recommendFftSize;
+
+console.log("Start { freqRange: ", freqRange, ", rangeHz: ", rangeHz, ", aboutFftSize: ", aboutFftSize, ", recommendFftSize: ", recommendFftSize);
 
 // Create an ultranet server.
 var sonicServer = new SonicServer(params);

@@ -18,6 +18,8 @@ function SonicSocket(params) {
   this.coder = params.coder || new SonicCoder(params);
   this.rampDuration = params.rampDuration || 0.001;
   this.amp = params.amp || 1;
+  this.gain;
+  this.osc;
 }
 
 SonicSocket.prototype.isModeFreqBin = function() {
@@ -29,28 +31,32 @@ SonicSocket.prototype.send = function(input, opt_callback) {
   input = this.coder.startChar + input + this.coder.endChar;
   var sepChar = this.coder.sepChar;
   var tmpArray = [];
-  input.split("").forEach(function(s) {
+  input.split("").forEach(function(s, index) {
     tmpArray.push(s);
-    tmpArray.push(sepChar);
+    if (index < input.length -1) {
+      tmpArray.push(sepChar);
+    }
   });
   input = tmpArray.join("");
 
   // Use WAAPI to schedule the frequencies.
+  var durationLength = 0;
   for (var i = 0; i < input.length; i++) {
     var char = input[i];
     var freq = this.coder.charToFreq(char);
 
     var bin = 0;
-    if (this.isModeFreqBin()) {
+    if (this.isModeFreqBin() && char != sepChar) {
       bin = this.coder.charToBin(char);
     } else {
 
     }
 
     console.log("Sending char:" + char + ", freq:" + freq + ", bin: " + bin + ", amp: " + this.amp);
-    var duration = (char == sepChar) ? (this.charDuration / 2) : (bin == 0 ? this.charDuration : this.charDuration * 2);
-    var time = audioContext.currentTime + duration * i;
-    this.scheduleToneAt(freq, time, this.charDuration, this.amp);
+    var duration = (char == sepChar) ? (this.charDuration * 0.5) : (bin == 0 ? this.charDuration : this.charDuration * 2);
+    durationLength += duration;
+    var time = audioContext.currentTime + durationLength;
+    this.scheduleToneAt(freq, time, duration, this.amp);
     // 90°位相をずらした波を重ねる
     // this.scheduleToneAt(freq, time + (1/freq/4), this.charDuration, this.amp);
   }
@@ -64,7 +70,7 @@ SonicSocket.prototype.send = function(input, opt_callback) {
 };
 
 SonicSocket.prototype.scheduleToneAt = function(freq, startTime, duration, amp) {
-  var gainNode = audioContext.createGain();
+  var gainNode = this.gain || audioContext.createGain();
   // Gain => Merger
   gainNode.gain.value = 0;
 
@@ -75,12 +81,13 @@ SonicSocket.prototype.scheduleToneAt = function(freq, startTime, duration, amp) 
 
   gainNode.connect(audioContext.destination);
 
-  var osc = audioContext.createOscillator();
+  var osc = this.osc || audioContext.createOscillator();
   osc.frequency.value = freq;
   // osc.type = "square";
   osc.connect(gainNode);
 
   osc.start(startTime);
+  osc.stop(startTime + duration);
 };
 
 module.exports = SonicSocket;

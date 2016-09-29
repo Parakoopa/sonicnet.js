@@ -24,7 +24,7 @@ var params = {
 var freqRange = params.freqMax - params.freqMin;
 var rangeHz = freqRange / Math.ceil((BITS.length + 3) / (params.mode + 1));
 var aboutFftSize = 44100 / rangeHz;
-var recommendFftSize = Math.pow(2, Math.ceil(Math.log2(aboutFftSize))); // 純粋なものだと厳しいので2倍する
+var recommendFftSize = Math.pow(2, Math.ceil(Math.log2(aboutFftSize))); // * 2 純粋なものだと厳しいので2倍する
 params.fftSize = recommendFftSize;
 
 console.log("Start { freqRange: ", freqRange, ", rangeHz: ", rangeHz, ", aboutFftSize: ", aboutFftSize, ", recommendFftSize: ", recommendFftSize);
